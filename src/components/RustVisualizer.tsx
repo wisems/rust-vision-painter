@@ -1,16 +1,23 @@
 
 import { useEffect, useRef, useState } from "react";
-import { Canvas, Image } from "fabric";
+import { Canvas, Image, Circle, IEvent } from "fabric";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Download, ZoomIn, ZoomOut, Eye, EyeOff } from "lucide-react";
+import { Download, ZoomIn, ZoomOut, Eye, EyeOff, Save } from "lucide-react";
 import { toast } from "sonner";
+import { Point } from "@/lib/types";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 
 interface RustVisualizerProps {
   originalImage: string;
   maskData: Uint8Array | number[];
   width: number;
   height: number;
+  onAddPoint?: (point: Point) => void;
+  onRescan?: () => void;
+  onSave?: (imageData: string) => void;
+  userPoints?: Point[];
+  isSelectingPoints?: boolean;
 }
 
 export default function RustVisualizer({
@@ -18,6 +25,11 @@ export default function RustVisualizer({
   maskData,
   width,
   height,
+  onAddPoint,
+  onRescan,
+  onSave,
+  userPoints = [],
+  isSelectingPoints = false,
 }: RustVisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [canvas, setCanvas] = useState<Canvas | null>(null);
@@ -25,6 +37,7 @@ export default function RustVisualizer({
   const [zoomLevel, setZoomLevel] = useState(1);
 
   const RUST_COLOR = "rgba(249, 115, 22, 0.5)"; // Orange with transparency
+  const POINT_COLOR = "rgba(220, 38, 38, 1)"; // Red for points
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -72,6 +85,56 @@ export default function RustVisualizer({
       canvas.renderAll();
     }
   }, [showOverlay, canvas]);
+
+  // Render user points
+  useEffect(() => {
+    if (!canvas) return;
+    
+    // Clear existing points
+    const objects = canvas.getObjects();
+    const pointsToRemove = objects.filter(obj => obj.data?.type === 'userPoint');
+    canvas.remove(...pointsToRemove);
+    
+    // Add new points
+    userPoints.forEach(point => {
+      const circle = new Circle({
+        left: point.x - 5,
+        top: point.y - 5,
+        radius: 5,
+        fill: POINT_COLOR,
+        stroke: 'white',
+        strokeWidth: 2,
+        selectable: false,
+        data: { type: 'userPoint' }
+      });
+      
+      canvas.add(circle);
+    });
+    
+    canvas.renderAll();
+  }, [userPoints, canvas]);
+
+  // Set up canvas click handler for point selection
+  useEffect(() => {
+    if (!canvas) return;
+    
+    const handleCanvasClick = (e: IEvent<MouseEvent>) => {
+      if (!isSelectingPoints || !onAddPoint) return;
+      
+      const pointer = canvas.getPointer(e.e);
+      onAddPoint({ x: pointer.x, y: pointer.y });
+    };
+    
+    if (isSelectingPoints) {
+      canvas.on('mouse:down', handleCanvasClick);
+    } else {
+      canvas.off('mouse:down', handleCanvasClick);
+    }
+    
+    return () => {
+      canvas.off('mouse:down', handleCanvasClick);
+    };
+  }, [canvas, isSelectingPoints, onAddPoint]);
 
   const applyMaskToCanvas = (
     canvas: Canvas,
@@ -138,6 +201,18 @@ export default function RustVisualizer({
     toast.success("Image downloaded successfully");
   };
 
+  const handleSave = () => {
+    if (!canvas || !onSave) return;
+    
+    const dataURL = canvas.toDataURL({
+      format: "png",
+      quality: 1,
+      multiplier: 1
+    });
+    
+    onSave(dataURL);
+  };
+
   const handleZoomIn = () => {
     setZoomLevel((prev) => Math.min(prev + 0.1, 2.5));
   };
@@ -189,15 +264,45 @@ export default function RustVisualizer({
             <Download size={18} className="mr-2" />
             Download
           </Button>
+          {onSave && (
+            <Button
+              onClick={handleSave}
+              variant="outline"
+              title="Save to Storage"
+            >
+              <Save size={18} className="mr-2" />
+              Save
+            </Button>
+          )}
         </div>
       </div>
+      
+      {isSelectingPoints && (
+        <Alert className="mb-4 bg-blue-50 border-blue-200">
+          <AlertDescription>
+            Click on areas of the image where you think rust might be present but wasn't detected.
+          </AlertDescription>
+        </Alert>
+      )}
+      
       <div className="canvas-container overflow-auto" style={{ maxHeight: "70vh" }}>
         <canvas ref={canvasRef} />
       </div>
-      <div className="mt-4">
+      
+      <div className="mt-4 flex justify-between items-center">
         <p className="text-sm text-gray-500">
           {showOverlay ? "Rust areas highlighted in orange" : "Overlay hidden - showing original image"}
+          {userPoints.length > 0 && ` • ${userPoints.length} point${userPoints.length === 1 ? '' : 's'} marked`}
         </p>
+        
+        {onRescan && userPoints.length > 0 && (
+          <Button 
+            onClick={onRescan}
+            className="bg-purple-600 hover:bg-purple-700"
+          >
+            Rescan with points
+          </Button>
+        )}
       </div>
     </Card>
   );

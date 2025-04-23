@@ -1,6 +1,7 @@
 
 // SAM2 Service for rust detection
 import { toast } from "sonner";
+import { Point } from "@/lib/types";
 
 interface SegmentationResult {
   maskData: Uint8Array | number[];
@@ -8,7 +9,7 @@ interface SegmentationResult {
   height: number;
 }
 
-export const detectRust = async (imageData: string): Promise<SegmentationResult | null> => {
+export const detectRust = async (imageData: string, userPoints?: Point[]): Promise<SegmentationResult | null> => {
   try {
     // In a real implementation, this would call the SAM2 API
     // For demo purposes, we'll simulate the API call with a simple detection
@@ -32,7 +33,9 @@ export const detectRust = async (imageData: string): Promise<SegmentationResult 
     
     // Create a simulated mask (for demo)
     // In a real implementation, this would come from the SAM2 API
-    const maskData = simulateRustDetection(imgData.data, canvas.width, canvas.height);
+    const maskData = userPoints && userPoints.length > 0 
+      ? simulateEnhancedRustDetection(imgData.data, canvas.width, canvas.height, userPoints)
+      : simulateRustDetection(imgData.data, canvas.width, canvas.height);
     
     return {
       maskData,
@@ -77,4 +80,76 @@ const simulateRustDetection = (pixelData: Uint8ClampedArray, width: number, heig
   }
   
   return maskData;
+};
+
+// Enhanced simulation that takes user points into consideration
+// In a real implementation, these points would be passed to the SAM2 API
+const simulateEnhancedRustDetection = (
+  pixelData: Uint8ClampedArray, 
+  width: number, 
+  height: number, 
+  userPoints: Point[]
+): Uint8Array => {
+  // First, get the basic rust detection
+  const baseMask = simulateRustDetection(pixelData, width, height);
+  
+  // For each user point, enhance detection around that area
+  userPoints.forEach(point => {
+    // Define an area around the point (creating a circle with radius 20px)
+    const radius = 20;
+    const startX = Math.max(0, Math.floor(point.x - radius));
+    const endX = Math.min(width - 1, Math.floor(point.x + radius));
+    const startY = Math.max(0, Math.floor(point.y - radius));
+    const endY = Math.min(height - 1, Math.floor(point.y + radius));
+    
+    // Check pixels in this area with more sensitive parameters
+    for (let y = startY; y <= endY; y++) {
+      for (let x = startX; x <= endX; x++) {
+        // Calculate pixel index
+        const pixelIndex = (y * width + x);
+        const dataIndex = pixelIndex * 4;
+        
+        // Skip if already detected as rust
+        if (baseMask[pixelIndex] === 1) continue;
+        
+        // Check if point is within circle radius from user's point
+        const distance = Math.sqrt(Math.pow(x - point.x, 2) + Math.pow(y - point.y, 2));
+        if (distance <= radius) {
+          // Get RGB values
+          const r = pixelData[dataIndex];
+          const g = pixelData[dataIndex + 1];
+          const b = pixelData[dataIndex + 2];
+          
+          // More sensitive rust detection near user points
+          // The parameters are relaxed compared to the main detection
+          const isRust = (r > 80 && r > g * 1.2 && r > b * 1.2) || 
+                        (r > 50 && g > 20 && g < 90 && b < 70 && r > b);
+          
+          if (isRust) {
+            baseMask[pixelIndex] = 1;
+          }
+        }
+      }
+    }
+  });
+  
+  return baseMask;
+};
+
+export const saveImageToStorage = async (imageData: string): Promise<string> => {
+  // This is a placeholder - in a real implementation, this would use Firebase Storage
+  // For demo purposes, we'll just return the original image data
+  
+  try {
+    // Simulate a server call delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // In a real implementation, this would be the download URL from Firebase Storage
+    const imageUrl = imageData;
+    
+    return imageUrl;
+  } catch (error) {
+    console.error("Error saving image to storage:", error);
+    throw new Error("Failed to save the image. Please try again.");
+  }
 };

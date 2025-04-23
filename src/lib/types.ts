@@ -6,3 +6,8 @@ export interface RustAnalysisResult {
   width: number;
   height: number;
 }
+
+export interface Point {
+  x: number;
+  y: number;
+}
